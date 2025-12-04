@@ -1,6 +1,13 @@
 # riz Recipe Admin Dashboard
 
-A comprehensive React admin dashboard for managing meal planning systems with Firebase backend.
+React admin dashboard for managing meal planning systems with Firebase backend.
+
+## 🔗 Related Project
+
+This is the **admin dashboard** for the Calo meal planning system. The client-side application can be found at:
+**[Calo Client App](https://github.com/nepho170/calo-last)**
+
+Both projects share the same Firebase backend and functions.
 
 ## 🚀 Features
 
