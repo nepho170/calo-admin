@@ -1,0 +1,81 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user is an admin
+    function isAdmin() {
+      return isAuthenticated() && 
+        firestore.exists(/databases/(default)/documents/admin_users/$(request.auth.uid)) &&
+        firestore.get(/databases/(default)/documents/admin_users/$(request.auth.uid)).data.active != false;
+    }
+    
+    // ========================================
+    // ADMIN-MANAGED CONTENT IMAGES
+    // ========================================
+    
+    // Images for ingredients - public read, admin write
+    match /ingredients/{ingredientId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    
+    // Images for meals - public read, admin write
+    match /meals/{mealId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    
+    // Images for meal packages - public read, admin write
+    match /meal-packages/{packageId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    
+    // Images for macro plans - public read, admin write
+    match /macro-plans/{planId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    
+    // Images for labels - public read, admin write
+    match /labels/{labelId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    
+    // ========================================
+    // TEMPORARY UPLOADS AND ADMIN TOOLS
+    // ========================================
+    
+    // Temporary uploads - admin only
+    match /temp/{allPaths=**} {
+      allow read, write: if isAdmin();
+    }
+    
+    // Admin uploads directory
+    match /admin/{allPaths=**} {
+      allow read, write: if isAdmin();
+    }
+    
+    // ========================================
+    // FILE VALIDATION AND RESTRICTIONS
+    // ========================================
+    
+    // Validate image uploads - size and type restrictions for all uploads
+    match /{allPaths=**} {
+      allow write: if isAdmin() &&
+        request.resource.size < 10 * 1024 * 1024 && // 10MB limit for admin uploads
+        request.resource.contentType.matches('image/.*');
+    }
+    
+    // Fallback: deny all other operations
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

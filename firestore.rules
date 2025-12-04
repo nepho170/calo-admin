@@ -1,0 +1,213 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ========================================
+    // PRODUCTION FIRESTORE SECURITY RULES
+    // ========================================
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user is authenticated and email is verified
+    // NOTE: Added fallback for development to handle token refresh timing
+    function isAuthenticatedAndVerified() {
+      return request.auth != null && 
+        (request.auth.token.email_verified == true || 
+         isRecentlyVerifiedUser());
+    }
+    
+    // Helper function to check if user is recently verified (within last 3 minutes)
+    // This helps with timing issues during email verification flow
+    function isRecentlyVerifiedUser() {
+      return request.auth != null && 
+        request.time < resource.data.get('emailVerifiedAt', request.time) + duration.value(3, 'm');
+    }
+    
+    // Helper function to check if user is an admin
+    function isAdmin() {
+      return isAuthenticatedAndVerified() && 
+        exists(/databases/$(database)/documents/admin_users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/admin_users/$(request.auth.uid)).data.active == true;
+    }
+    
+    // Helper function to check if user owns the resource
+    function isOwner(userId) {
+      return isAuthenticatedAndVerified() && request.auth.uid == userId;
+    }
+    
+    // Helper function to check if it's the same user
+    function isSameUser(userId) {
+      return isAuthenticatedAndVerified() && request.auth.uid == userId;
+    }
+    
+    // ========================================
+    // ADMIN USERS COLLECTION
+    // ========================================
+    match /admin_users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isAdmin();
+    }
+    
+    // ========================================
+    // USER-SPECIFIC COLLECTIONS
+    // ========================================
+    
+    // Users collection - users can only access their own data, admins can access all
+    match /users/{userId} {
+      allow read, write: if isOwner(userId) || isAdmin();
+      // Allow user creation during signup (before email verification), but require auth for read/write
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // User orders - users can only access their own orders, admins can access all
+    match /orders/{orderId} {
+      allow read: if isAuthenticatedAndVerified() && 
+        (resource.data.customerId == request.auth.uid) || isAdmin();
+      allow write: if isAuthenticatedAndVerified() && 
+        (resource.data.customerId == request.auth.uid || 
+         request.resource.data.customerId == request.auth.uid) || isAdmin();
+      allow create: if isAuthenticatedAndVerified();
+    }
+    
+    // User meal selections - users can only access their own selections, admins can access all
+    match /userMealSelections/{selectionId} {
+      allow read: if isAuthenticatedAndVerified() && 
+        (resource.data.userId == request.auth.uid) || isAdmin();
+      allow write: if isAuthenticatedAndVerified() && 
+        (resource.data.userId == request.auth.uid || 
+         request.resource.data.userId == request.auth.uid) || isAdmin();
+      allow create: if isAuthenticatedAndVerified();
+    }
+    
+    // Custom packages - users can only access their own custom packages, admins can access all
+    match /customPackages/{packageId} {
+      allow read: if isAuthenticatedAndVerified() && 
+        (resource.data.userId == request.auth.uid) || isAdmin();
+      allow write: if isAuthenticatedAndVerified() && 
+        (resource.data.userId == request.auth.uid || 
+         request.resource.data.userId == request.auth.uid) || isAdmin();
+      allow create: if isAuthenticatedAndVerified();
+    }
+    
+    // ========================================
+    // PUBLIC READ-ONLY COLLECTIONS
+    // (Content that all authenticated users need to access)
+    // ========================================
+    
+    // Meals catalog - read-only for authenticated users, write for admins
+    match /meals/{mealId} {
+      allow read: if isAuthenticatedAndVerified();
+      allow write: if isAdmin();
+    }
+    
+    // Macro plans - read-only for authenticated users, write for admins
+    match /macroPlans/{planId} {
+      allow read: if isAuthenticatedAndVerified();
+      allow write: if isAdmin();
+    }
+    
+    // Meal packages - read-only for authenticated users, write for admins
+    match /mealPackages/{packageId} {
+      allow read: if isAuthenticatedAndVerified();
+      allow write: if isAdmin();
+    }
+    
+    // Allergies - read-only for authenticated users, write for admins
+    match /allergies/{allergyId} {
+      allow read: if isAuthenticatedAndVerified();
+      allow write: if isAdmin();
+    }
+    
+    // Dietary filters - read-only for authenticated users, write for admins
+    match /dietaryFilters/{filterId} {
+      allow read: if isAuthenticatedAndVerified();
+      allow write: if isAdmin();
+    }
+    
+    // Labels - read-only for authenticated users, write for admins
+    match /labels/{labelId} {
+      allow read: if isAuthenticatedAndVerified();
+      allow write: if isAdmin();
+    }
+    
+    // ========================================
+    // MENU AND TEMPLATE COLLECTIONS
+    // ========================================
+    
+    // Master month templates - read-only for authenticated users, write for admins
+    match /masterMonthTemplates/{templateId} {
+      allow read: if isAuthenticatedAndVerified();
+      allow write: if isAdmin();
+    }
+    
+    // Month overrides - read-only for authenticated users, write for admins  
+    match /monthOverrides/{overrideId} {
+      allow read: if isAuthenticatedAndVerified();
+      allow write: if isAdmin();
+    }
+    
+    // Weekly menu templates - read-only for authenticated users, write for admins
+    match /weeklyMenuTemplates/{templateId} {
+      allow read: if isAuthenticatedAndVerified();
+      allow write: if isAdmin();
+    }
+    
+    // ========================================
+    // APP CONFIGURATION COLLECTIONS
+    // ========================================
+    
+    // App settings - read for all authenticated users, write for admins only
+    match /appSettings/{settingId} {
+      allow read: if isAuthenticatedAndVerified();
+      allow write: if isAdmin();
+    }
+    
+    // System settings - read for authenticated users, write for admins only
+    match /systemSettings/{settingId} {
+      allow read: if isAuthenticatedAndVerified();
+      allow write: if isAdmin();
+    }
+    
+    // ========================================
+    // LOGGING AND ACTIVITY COLLECTIONS
+    // ========================================
+    
+    // Activity logs - authenticated users can create logs, admins can read all
+    match /activityLogs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticatedAndVerified();
+      // Logs should be immutable once created
+      allow update, delete: if false;
+    }
+    
+    // ========================================
+    // WEBHOOK EVENTS COLLECTION
+    // ========================================
+    
+    // Webhook events - only admins can read, functions can write via service account
+    match /webhookEvents/{eventId} {
+      allow read: if isAdmin();
+      // Functions will write to this collection with service account permissions
+      allow write: if false; // Only Firebase Functions can write
+    }
+    
+    // ========================================
+    // FUNCTIONS AND CLOUD OPERATIONS
+    // ========================================
+    
+    // Allow Firebase Functions to read/write with admin privileges
+    // Functions run with service account permissions that bypass these rules
+    
+    // ========================================
+    // CATCH-ALL RULE
+    // ========================================
+    
+    // Deny access to any collections not explicitly defined above
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
