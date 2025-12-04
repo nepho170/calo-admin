@@ -1,4 +1,4 @@
-# riz Recipe Admin Dashboard
+# Biz Recipe Admin Dashboard
 
 React admin dashboard for managing meal planning systems with Firebase backend.
 
